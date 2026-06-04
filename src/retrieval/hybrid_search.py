@@ -66,6 +66,9 @@ class HybridSearchEngine:
         limit: int = 5,
         module: str | None = None,
         category: str | None = None,
+        version: int | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
     ) -> dict[str, Any]:
         """Execute a hybrid search over the changelog index.
 
@@ -74,6 +77,9 @@ class HybridSearchEngine:
             limit: Maximum number of results to return.
             module: Optional module name filter.
             category: Optional category filter.
+            version: Optional version/entry number filter.
+            start_date: Optional start date filter.
+            end_date: Optional end date filter.
 
         Returns:
             Dict with keys: results, warning, query_info.
@@ -114,7 +120,7 @@ class HybridSearchEngine:
             )
 
         # --- Build metadata filter ---
-        where_filter = self._build_filter(module, category)
+        where_filter = self._build_filter(module, category, version, start_date, end_date)
 
         # --- Parallel retrieval ---
         vector_results = self._vector_search(query, limit * 4, where_filter)
@@ -125,7 +131,7 @@ class HybridSearchEngine:
 
         # --- Apply metadata filters to BM25 results (BM25 doesn't support metadata) ---
         if where_filter:
-            fused = self._apply_metadata_filter(fused, module, category)
+            fused = self._apply_metadata_filter(fused, module, category, version, start_date, end_date)
 
         # --- Relevance filtering ---
         scored_results, warning = validate_relevance(
@@ -299,6 +305,9 @@ class HybridSearchEngine:
         results: list[dict],
         module: str | None,
         category: str | None,
+        version: int | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
     ) -> list[dict]:
         """Post-filter results by metadata (for BM25 results without native filtering)."""
         filtered = []
@@ -307,6 +316,12 @@ class HybridSearchEngine:
             if module and meta.get("module", "").lower() != module.lower():
                 continue
             if category and meta.get("category", "").lower() != category.lower():
+                continue
+            if version is not None and meta.get("entry_number") != version:
+                continue
+            if start_date and meta.get("date_str") and meta.get("date_str", "") < start_date:
+                continue
+            if end_date and meta.get("date_str") and meta.get("date_str", "") > end_date:
                 continue
             filtered.append(r)
         return filtered
@@ -319,6 +334,9 @@ class HybridSearchEngine:
         self,
         module: str | None,
         category: str | None,
+        version: int | None = None,
+        start_date: str | None = None,
+        end_date: str | None = None,
     ) -> dict | None:
         """Build a ChromaDB where-filter from optional parameters."""
         conditions = []
@@ -327,6 +345,12 @@ class HybridSearchEngine:
             conditions.append({"module": {"$eq": module}})
         if category:
             conditions.append({"category": {"$eq": category}})
+        if version is not None:
+            conditions.append({"entry_number": {"$eq": version}})
+        if start_date:
+            conditions.append({"date_str": {"$gte": start_date}})
+        if end_date:
+            conditions.append({"date_str": {"$lte": end_date}})
 
         if not conditions:
             return None

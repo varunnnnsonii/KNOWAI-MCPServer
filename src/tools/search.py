@@ -81,6 +81,18 @@ def register_tools(mcp: FastMCP) -> None:
             default=None,
             description="Optional filter by exact module name (e.g., 'api', 'db', 'frontend')."
         ),
+        version: Optional[int] = Field(
+            default=None,
+            description="Optional filter by specific version or entry number (e.g., 600)."
+        ),
+        start_date: Optional[str] = Field(
+            default=None,
+            description="Optional start date filter (ISO format or similar)."
+        ),
+        end_date: Optional[str] = Field(
+            default=None,
+            description="Optional end date filter (ISO format or similar)."
+        ),
         limit: int = Field(
             default=5,
             description="Maximum number of results to return. Default 5, max 10."
@@ -92,14 +104,18 @@ def register_tools(mcp: FastMCP) -> None:
         
         try:
             engine = get_search_engine()
-            # Category filter for changelog (exclude key decisions)
-            # Actually, the parser puts "Changelog" as the category for standard entries.
-            # We can leave category empty to search everything, or filter to "Changelog"
-            result = engine.search(query, limit=limit, module=module)
+            result = engine.search(
+                query, 
+                limit=limit, 
+                module=module, 
+                version=version, 
+                start_date=start_date, 
+                end_date=end_date
+            )
             return _format_search_response(result)
         except Exception as e:
             logger.error("search_changelog tool failed", extra={"error": str(e)})
-            return f"Error executing search: {str(e)}"
+            return _friendly_error_message(e)
 
     @mcp.tool(
         name="search_decision_rationale",
@@ -125,7 +141,7 @@ def register_tools(mcp: FastMCP) -> None:
             return _format_search_response(result)
         except Exception as e:
             logger.error("search_decision_rationale tool failed", extra={"error": str(e)})
-            return f"Error executing search: {str(e)}"
+            return _friendly_error_message(e)
 
     @mcp.tool(
         name="get_index_status",
@@ -177,6 +193,7 @@ def _format_search_response(search_result: dict) -> str:
 
     for i, r in enumerate(results, 1):
         output.append(f"--- Result {i} (Score: {r.get('relevance_score')}) ---")
+        output.append(f"Version/Entry: {r.get('entry_number')}")
         output.append(f"Title: {r.get('title')}")
         output.append(f"Category: {r.get('category')} | Module: {r.get('module')}")
         output.append(f"Date: {r.get('date')}")
@@ -193,3 +210,15 @@ def _format_search_response(search_result: dict) -> str:
         output.append("") # blank line
 
     return "\n".join(output)
+
+def _friendly_error_message(e: Exception) -> str:
+    """Map technical exceptions to user-friendly explanations."""
+    err_str = str(e).lower()
+    if "connection refused" in err_str or "connect" in err_str:
+        return "The search service is currently unavailable. Please check your connection to the vector database or embedding provider."
+    elif "index" in err_str or "collection" in err_str:
+        return "The changelog index could not be accessed. It may still be building or requires a re-index."
+    elif "embedding" in err_str:
+        return "Failed to process the search query. The embedding model might be offline or encountering an issue."
+    else:
+        return "An unexpected error occurred while processing your search. Please try rephrasing your query or checking the server logs for more details."
