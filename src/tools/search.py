@@ -22,8 +22,8 @@ def get_search_engine() -> HybridSearchEngine:
     In FastMCP, tools run synchronously or asynchronously, but they need
     access to the state initialized in `src/server.py`.
     """
-    import src.server
-    indexer = src.server._indexer
+    import src._state as state
+    indexer = state.indexer
     
     if indexer is None:
         raise RuntimeError("Indexer not initialized. Server lifecycle failed.")
@@ -48,8 +48,16 @@ def get_search_engine() -> HybridSearchEngine:
                 # wait, they ARE stored in vector store `document` field!
                 res = indexer.vector_store.collection.get(ids=ids, include=["documents"])
                 if res and res["documents"]:
-                    bm25.build(ids, res["documents"])
-                    bm25.save()
+                    # ChromaDB may return None for some documents; filter them out
+                    clean_ids = []
+                    clean_texts = []
+                    for doc_id, text in zip(res["ids"], res["documents"]):
+                        if text is not None:
+                            clean_ids.append(doc_id)
+                            clean_texts.append(text)
+                    if clean_ids:
+                        bm25.build(clean_ids, clean_texts)
+                        bm25.save()
 
     return HybridSearchEngine(
         embedder=indexer.embedder,
@@ -80,7 +88,7 @@ def register_tools(mcp: FastMCP) -> None:
     ) -> str:
         """Search the changelog."""
         limit = min(limit, 10)
-        logger.info("Executing search_changelog tool", extra={"query": query, "module": module})
+        logger.info("Executing search_changelog tool", extra={"query": query, "module_name": module})
         
         try:
             engine = get_search_engine()
@@ -112,8 +120,8 @@ def register_tools(mcp: FastMCP) -> None:
         
         try:
             engine = get_search_engine()
-            # Filter specifically to "Key decisions" category
-            result = engine.search(query, limit=limit, category="Key decisions")
+            # Filter specifically to "Decision" category (assigned by chunker)
+            result = engine.search(query, limit=limit, category="Decision")
             return _format_search_response(result)
         except Exception as e:
             logger.error("search_decision_rationale tool failed", extra={"error": str(e)})
@@ -127,8 +135,8 @@ def register_tools(mcp: FastMCP) -> None:
         """Get index status."""
         logger.info("Executing get_index_status tool")
         try:
-            import src.server
-            indexer = src.server._indexer
+            import src._state as state
+            indexer = state.indexer
             if indexer is None:
                 return "Index is not initialized."
             

@@ -6,9 +6,8 @@ Registers tools and handles background indexing on startup.
 from __future__ import annotations
 
 import asyncio
-import os
 import sys
-from pathlib import Path
+from contextlib import asynccontextmanager
 
 from mcp.server.fastmcp import FastMCP, Context
 
@@ -16,24 +15,14 @@ from src.config import get_settings
 from src.indexing.indexer import Indexer
 from src.observability import get_logger
 from src.tools.search import register_tools
+import src._state as state
 
 logger = get_logger(__name__)
 
-# Single fastmcp instance
-mcp = FastMCP(
-    name="changelog-semantic-search",
-    version="1.0.0",
-    dependencies=["pydantic", "chromadb", "sentence-transformers", "rank-bm25"],
-)
 
-# Global indexer instance (injected into context/tools)
-_indexer: Indexer | None = None
-
-
-@mcp.server.lifespan
+@asynccontextmanager
 async def lifespan(server):
     """Lifecycle hook: runs on server startup and shutdown."""
-    global _indexer
     logger.info("Starting MCP server lifecycle")
 
     try:
@@ -41,7 +30,7 @@ async def lifespan(server):
         settings = get_settings()
 
         # Initialize indexing pipeline
-        _indexer = Indexer(settings)
+        state.indexer = Indexer(settings)
 
         # Run background index
         # In a production environment, this could be offloaded to a separate task.
@@ -51,7 +40,7 @@ async def lifespan(server):
         
         # We run it in a threadpool to not block the async event loop,
         # though during lifespan it doesn't strictly matter for FastMCP.
-        await asyncio.to_thread(_indexer.run)
+        await asyncio.to_thread(state.indexer.run)
         
         logger.info("Indexing complete, ready for requests")
 
@@ -65,6 +54,12 @@ async def lifespan(server):
         logger.info("Shutting down MCP server")
 
 
+# Single fastmcp instance — lifespan passed as constructor param (mcp SDK v1.27+)
+mcp = FastMCP(
+    name="changelog-semantic-search",
+    lifespan=lifespan,
+)
+
 # Register all tools from the tools module
 register_tools(mcp)
 
@@ -73,9 +68,10 @@ def run_dev():
     """Run the server using mcp dev (requires mcp cli)."""
     # Simply delegates to mcp cli via fastmcp
     import subprocess
-    subprocess.run(["mcp", "dev", "src.server:mcp"])
+    subprocess.run(["mcp", "dev", "src/server.py"])
 
 
 if __name__ == "__main__":
     # If run directly, run stdio (for MCP clients)
     mcp.run(transport="stdio")
+
