@@ -28,6 +28,9 @@ data/bm25_index.pkl
 data/file_manifest.json
 data/index_metadata.json
 
+# Local artifacts (design docs, research — not for GitHub)
+Artifacts/
+
 # OS
 .DS_Store
 Thumbs.db
