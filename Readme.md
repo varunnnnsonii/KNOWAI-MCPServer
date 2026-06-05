@@ -46,12 +46,17 @@ The server is built with a clean, layered architecture:
    ```
 
 3. **Run the MCP Server:**
-   You can run the server directly using FastMCP's built-in support:
+   You can run the server directly using FastMCP's built-in support: 
 
-   ```bash
-   # Run via MCP CLI Inspector (GUI)
-   mcp dev src.server:mcp
+   ```bash  
+   # Run via MCP CLI Inspector (GUI) - WINDOWS
+     .\venv\Scripts\Activate.ps1
+     mcp dev src/server.py
+   # if wsl/linux/mac
+     source venv/bin/activate
+     mcp dev src.server.py
    ```
+   
 
    **Connecting via an MCP Client (GUI):**
    When configuring your MCP Client (like Claude Desktop or any other GUI client), you will need to set up the connection parameters:

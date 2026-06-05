@@ -11,13 +11,16 @@ from pathlib import Path
 
 from pydantic_settings import BaseSettings
 
+# Calculate the project root relative to this file (src/config.py)
+PROJECT_ROOT = Path(__file__).parent.parent.resolve()
+
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
     # --- Paths ---
-    changelog_dir: Path = Path("./data/changelogs")
-    data_dir: Path = Path("./data")
+    changelog_dir: Path = PROJECT_ROOT / "data" / "changelogs"
+    data_dir: Path = PROJECT_ROOT / "data"
 
     # --- Embedding Model ---
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
