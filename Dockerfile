@@ -1,34 +1,40 @@
-# Stage 1: Build dependencies
+# Stage 1: Build environment
 FROM python:3.12-slim AS builder
 
 WORKDIR /app
 
-# Install build dependencies
+# Install system build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Install python dependencies
+# Create a virtual environment
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Copy pyproject.toml
 COPY pyproject.toml .
-# Create dummy src so pip can install the project
+
+# Create dummy src so pip can install the project without needing the full code yet
 RUN mkdir -p src && touch src/__init__.py
 
-RUN pip install --no-cache-dir build && \
-    pip wheel --no-cache-dir --no-deps --wheel-dir /app/wheels . && \
-    pip install --no-cache-dir --target=/app/deps ".[cli]"
-
+# Install dependencies into the virtual environment
+RUN pip install --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir .[cli]
 
 # Stage 2: Final runtime
 FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install runtime dependencies for rank-bm25/chroma/etc if needed
+# Install runtime dependencies if needed
 # (Chroma usually requires sqlite3 which is built into python-slim)
 
-# Copy dependencies from builder
-COPY --from=builder /app/deps /usr/local/lib/python3.12/site-packages
-COPY --from=builder /usr/local/bin/mcp /usr/local/bin/mcp
+# Copy the virtual environment from the builder stage
+COPY --from=builder /opt/venv /opt/venv
+
+# Ensure the virtual environment is used
+ENV PATH="/opt/venv/bin:$PATH"
 
 # Copy application code
 COPY src/ ./src/
@@ -43,8 +49,5 @@ ENV LOG_LEVEL=INFO
 # Create necessary directories
 RUN mkdir -p /data /changelogs
 
-# Expose standard stdio
-# FastMCP uses stdio by default when using `mcp run` or `python src/server.py`
-# But if you want to run an SSE server, it's also possible. We default to stdio.
-
+# FastMCP uses stdio by default when running directly
 ENTRYPOINT ["python", "-m", "src.server"]
